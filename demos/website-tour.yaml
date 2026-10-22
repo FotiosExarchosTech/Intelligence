@@ -1,0 +1,55 @@
+title: Ridebly website tour
+description: >
+  How Ridebly works from booking to driver, the online booking engine customers use, and the
+  pricing page. Good for someone hearing about Ridebly for the first time.
+
+steps:
+  - open: https://www.ridebly.com/how-it-works
+    say:
+      en: Let me show you how Ridebly works, from the moment a customer books.
+      el: Ας δούμε πώς λειτουργεί το Ridebly, από τη στιγμή που ένας πελάτης κάνει κράτηση.
+
+  - point_at: {en: STEP 1, el: ΒΗΜΑ 1}
+    say:
+      en: First, the customer books online, for example through the booking form on your website.
+      el: Πρώτα, ο πελάτης κάνει κράτηση online, για παράδειγμα από τη φόρμα κρατήσεων στην ιστοσελίδα σας.
+
+  - point_at: {en: STEP 2, el: ΒΗΜΑ 2}
+    say:
+      en: The booking appears automatically in your Ridebly calendar. For car rental, it's linked to your fleet's availability.
+      el: Η κράτηση εμφανίζεται αυτόματα στο ημερολόγιο του Ridebly. Στο rent a car συνδέεται με τη διαθεσιμότητα του στόλου σας.
+
+  - point_at: {en: STEP 3, el: ΒΗΜΑ 3}
+    say:
+      en: You assign the booking to one of your drivers.
+      el: Αναθέτετε την κράτηση σε έναν οδηγό της ομάδας σας.
+
+  - point_at: {en: STEP 4, el: ΒΗΜΑ 4}
+    say:
+      en: The driver gets a notification on their phone and accepts the trip.
+      el: Ο οδηγός λαμβάνει ειδοποίηση στο κινητό του και αποδέχεται τη διαδρομή.
+
+  - point_at: {en: STEP 5, el: ΒΗΜΑ 5}
+    say:
+      en: And the trip appears in the driver's calendar, so everyone is up to date.
+      el: Και η διαδρομή εμφανίζεται στο ημερολόγιο του οδηγού, ώστε όλοι να είναι ενημερωμένοι.
+
+  - open: https://www.ridebly.com/booking-engine
+    say:
+      en: This is the booking engine. Your customers book on your own website, in Greek or English, with no platform commission.
+      el: Αυτό είναι το σύστημα κρατήσεων. Οι πελάτες σας κάνουν κράτηση στη δική σας ιστοσελίδα, στα ελληνικά ή στα αγγλικά, χωρίς προμήθεια.
+
+  - point_at: {en: Transfer booking form, el: Φόρμα κρατήσεων transfer}
+    say:
+      en: For transfers, they choose pickup and destination, date and time, passengers, luggage and the type of vehicle.
+      el: Για τα transfer, επιλέγουν σημείο παραλαβής και προορισμό, ημερομηνία και ώρα, επιβάτες, αποσκευές και τύπο οχήματος.
+
+  - point_at: {en: Booking engine for car rental, el: Booking engine για rent a car}
+    say:
+      en: For car rental, they see your available vehicles and book online.
+      el: Για το rent a car, βλέπουν τα διαθέσιμα οχήματά σας και κάνουν κράτηση online.
+
+  - open: https://www.ridebly.com/pricing
+    say:
+      en: And finally, pricing. It's a monthly subscription based on your fleet size, with no commission per booking and a fourteen-day free trial.
+      el: Και τέλος, οι τιμές. Είναι μηνιαία συνδρομή ανάλογα με το μέγεθος του στόλου σας, χωρίς προμήθεια ανά κράτηση, με δωρεάν δοκιμή δεκατεσσάρων ημερών.

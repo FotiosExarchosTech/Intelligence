@@ -1,0 +1,46 @@
+# Template for a new demo: copy this file to demos/<name>.yaml (without the leading "_",
+# which makes the assistant skip it). The assistant sees each demo's title and description and starts the one
+# that fits when someone asks to see something.
+#
+# Every step does at most one thing on screen and has an optional line to say. The assistant says the
+# line while the action happens, and moves on when both are done. Texts can be one string, or
+# {en: ..., el: ...} so the demo works in both languages.
+
+title: Example demo
+description: One or two sentences on what this demo shows and who it is for.
+
+steps:
+  # Open a web page. ridebly.com pages open in the person's language automatically.
+  - open: https://www.ridebly.com/
+    say: {en: Here is the Ridebly website., el: Αυτή είναι η ιστοσελίδα του Ridebly.}
+
+  # Open a page of the Ridebly app (RIDEBLY_APP_URL + this path). If nobody is logged in,
+  # the demo stops and the assistant asks staff to log in.
+  - open_app: /
+    say: {en: This is the Ridebly app., el: Αυτή είναι η εφαρμογή Ridebly.}
+
+  # Click a link or button by its visible text.
+  - click: {en: Bookings, el: Κρατήσεις}
+    say: {en: Here are all the bookings., el: Εδώ είναι όλες οι κρατήσεις.}
+
+  # Scroll to some text and outline it for a few seconds.
+  - point_at: {en: Total, el: Σύνολο}
+    say: {en: The total is calculated automatically., el: Το σύνολο υπολογίζεται αυτόματα.}
+
+  # Type into a field (by its label or placeholder; empty = the page's main field).
+  - type: {field: Customer name, text: Maria Example, submit: false}
+
+  # Press a key: Enter, Tab, Escape, ArrowUp/Down/Left/Right, PageUp/PageDown, Home, End...
+  - press: Enter
+
+  # Scroll: down, up, top or bottom.
+  - scroll: down
+
+  # The ridebly.com price calculator (transport or car_rental).
+  - pricing: {business: car_rental, vehicles: 20}
+
+  # Pause (seconds), e.g. to let people look.
+  - wait: 2
+
+  # Back to the assistant's face.
+  - show_face: true
