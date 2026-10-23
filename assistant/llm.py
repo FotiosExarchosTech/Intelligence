@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ import time
 import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import anthropic
 import ollama
@@ -304,6 +306,7 @@ class OllamaConversation(Conversation):
             # On the last round tools are off, so the turn always ends with something said.
             last = round_ == _MAX_TOOL_ROUNDS - 1
             parts: list[str] = []
+            held = ""  # text from a "<" on: maybe a tool call the model wrote out instead of making
             calls = []
             async for chunk in await self._client.chat(
                 model=s.ollama_model,
@@ -313,9 +316,27 @@ class OllamaConversation(Conversation):
                 stream=True,
             ):
                 if delta := chunk.message.content:
-                    parts.append(delta)
-                    yield delta
+                    if not held and "<" in delta:
+                        before, held = delta.split("<", 1)
+                        held = "<" + held
+                        delta = before
+                    elif held:
+                        held, delta = held + delta, ""
+                    if delta:
+                        parts.append(delta)
+                        yield delta
                 calls += chunk.message.tool_calls or []
+            if held:
+                written_calls = _written_tool_calls(held, self._tools)
+                if written_calls:
+                    log.info("The model wrote its tool call as text; running it anyway")
+                    calls += written_calls
+                elif "call:" in held or "tool_call" in held:
+                    log.warning("Dropped an unreadable tool call the model wrote as text: %s", held[:200])
+                elif cleaned := _CONTROL_TOKENS.sub("", held).strip():
+                    # Ordinary text, minus any of the model's internal tags ("<channel|>", "<br>").
+                    parts.append(cleaned)
+                    yield cleaned
             text = "".join(parts)
             if not calls:
                 break
@@ -345,6 +366,53 @@ class OllamaConversation(Conversation):
             else m
             for i, m in enumerate(self._messages)
         ]
+
+
+# A tool call written out as text, e.g. <call:open_website url="https://..."/> or Gemma's
+# native <|tool_call>call:open_website{url:<|"|>https://...<|"|>}<tool_call|>.
+_WRITTEN_CALL = re.compile(r"call:\s*([A-Za-z_]\w*)(.*?)(?=call:\s*[A-Za-z_]|$)", re.DOTALL)
+_ATTRIBUTE = re.compile(r'(\w+)\s*[=:]\s*(?:<\|"\|>|"|\')(.*?)(?:<\|"\|>|"|\')')
+_BARE_ATTRIBUTE = re.compile(r"(\w+)\s*[=:]\s*(-?\d+(?:\.\d+)?|true|false)\b")
+
+
+# Internal markup some models leak into their text: <channel|>, <|channel>, <tool_call|>, <br>.
+_CONTROL_TOKENS = re.compile(r"<\|?/?[A-Za-z_]+\|?>?|<\|\"\|>")
+
+
+def _written_tool_calls(text: str, tools: dict[str, Tool]) -> list:
+    """Turn tool calls a model wrote as text into real calls (for known tools only)."""
+    calls = []
+    for name, rest in _WRITTEN_CALL.findall(text):
+        tool = tools.get(name)
+        if tool is None:
+            continue
+        arguments: dict = {}
+        brace = rest.find("{")
+        if brace >= 0:
+            try:
+                arguments = json.loads(rest[brace : rest.rfind("}") + 1])
+            except ValueError:
+                arguments = {}
+        if not arguments:
+            arguments = {key: value for key, value in _ATTRIBUTE.findall(rest)}
+            for key, value in _BARE_ATTRIBUTE.findall(rest):
+                arguments.setdefault(key, json.loads(value))
+        # Numbers written as text ("5") where the tool expects a number.
+        properties = tool.parameters.get("properties", {})
+        for key, value in list(arguments.items()):
+            kind = properties.get(key, {}).get("type")
+            if isinstance(value, str) and kind in ("integer", "number"):
+                try:
+                    arguments[key] = int(value) if kind == "integer" else float(value)
+                except ValueError:
+                    pass
+            elif isinstance(value, str) and kind == "boolean":
+                arguments[key] = value.lower() == "true"
+        missing = [key for key in tool.parameters.get("required", []) if key not in arguments]
+        if missing:
+            continue
+        calls.append(SimpleNamespace(function=SimpleNamespace(name=name, arguments=arguments)))
+    return calls
 
 
 def create_conversation(settings: Settings, tools: list[Tool]) -> Conversation:

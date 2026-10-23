@@ -13,6 +13,7 @@ import io
 import logging
 import os
 import re
+import time
 import wave
 from concurrent.futures import ThreadPoolExecutor
 
@@ -66,6 +67,10 @@ class LanguageDetector:
 
 
 class SpeechToText:
+    # "el" or "en" = only listen for that language; "auto" = work it out per sentence.
+    # Can be changed while running (the language switch).
+    language: str = "auto"
+
     async def transcribe(self, audio: np.ndarray) -> tuple[str, str]:
         """16 kHz float32 audio -> (text, language code). Runs in a worker thread."""
         return await asyncio.to_thread(self._transcribe, audio)
@@ -102,7 +107,8 @@ class CanarySpeechToText(SpeechToText):
         path = settings.canary_model_dir
         log.info("Loading Canary speech recognition%s...", "" if path.exists() else " (first run downloads ~1 GB)")
         self._model = onnx_asr.load_model("nemo-canary-1b-v2", path, quantization="int8").with_timestamps()
-        self._detector = LanguageDetector(settings) if settings.language == "auto" else None
+        self.language = settings.language
+        self._detector = LanguageDetector(settings)  # for "auto", which can be switched to any time
         self._pool = ThreadPoolExecutor(max_workers=3)
         self._previous: str | None = None
 
@@ -113,8 +119,8 @@ class CanarySpeechToText(SpeechToText):
         return _fix_unknown_letters(result.text), confidence
 
     def _transcribe(self, audio: np.ndarray) -> tuple[str, str]:
-        if self._detector is None:
-            return self._read(audio, self._settings.language)[0], self._settings.language
+        if self.language != "auto":
+            return self._read(audio, self.language)[0], self.language
         if self._previous and len(audio) < _SHORT_S * 16000:
             # One or two words: too little to judge, keep the conversation's language.
             log.info("Language: %s (short reply, kept)", self._previous)
@@ -148,10 +154,11 @@ class ParakeetSpeechToText(SpeechToText):
         path = settings.parakeet_model_dir
         log.info("Loading Parakeet speech recognition%s...", "" if path.exists() else " (first run downloads ~670 MB)")
         self._model = onnx_asr.load_model("nemo-parakeet-tdt-0.6b-v3", path, quantization="int8")
+        self.language = settings.language
 
     def _transcribe(self, audio: np.ndarray) -> tuple[str, str]:
         text = _fix_unknown_letters(self._model.recognize(audio, sample_rate=16000))
-        language = self._settings.language
+        language = self.language
         if language == "auto":
             language = text_language(text, fallback="en")
         return text, language
@@ -163,13 +170,12 @@ class WhisperSpeechToText(SpeechToText):
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._model = _load_whisper(settings, settings.whisper_model)
-        self._detector = None
-        if settings.language == "auto":
-            same = settings.whisper_language_model == settings.whisper_model
-            self._detector = LanguageDetector(settings, self._model if same else None)
+        self.language = settings.language
+        same = settings.whisper_language_model == settings.whisper_model
+        self._detector = LanguageDetector(settings, self._model if same else None)
 
     def _transcribe(self, audio: np.ndarray) -> tuple[str, str]:
-        language = self._detector.detect(audio) if self._detector else self._settings.language
+        language = self._detector.detect(audio) if self.language == "auto" else self.language
         segments, _ = self._model.transcribe(
             audio,
             language=language,
@@ -195,8 +201,17 @@ _HALLUCINATIONS = {
     "thank you for watching",
     "thanks for watching",
     "thank you",
+    "and",
+    "you",
 }
-_LANGUAGE_CODES = {"greek": "el", "english": "en", "el": "el", "en": "en"}
+def _language_code(name: str | None) -> str | None:
+    """Groq reports languages by name, e.g. "English" or "Modern Greek (1453-)"."""
+    name = (name or "").lower()
+    if "greek" in name or name == "el":
+        return "el"
+    if "english" in name or name == "en":
+        return "en"
+    return None
 
 
 class GroqSpeechToText(SpeechToText):
@@ -210,25 +225,47 @@ class GroqSpeechToText(SpeechToText):
         self._client = groq.Groq(timeout=6.0, max_retries=0)  # reads GROQ_API_KEY
         self._fallback = fallback
         self._previous: str | None = None
+        self._paused_until = 0.0  # after hitting the free limit
+        self.language = settings.language
         log.info("Speech recognition: Groq %s%s", settings.groq_stt_model, " (local fallback ready)" if fallback else "")
 
     def _transcribe(self, audio: np.ndarray) -> tuple[str, str]:
+        import groq
+
+        if self._fallback is not None:
+            self._fallback.language = self.language
+        if self._fallback is not None and time.monotonic() < self._paused_until:
+            return self._fallback._transcribe(audio)  # over Groq's free limit for now
         try:
             return self._groq(audio)
         except Exception as exc:
             if self._fallback is None:
                 raise
-            log.warning("Groq speech recognition failed (%s); using the local recognizer", exc)
+            if isinstance(exc, groq.RateLimitError):
+                # Don't ask again (and wait for the refusal) on every sentence until Groq says
+                # the limit has reset.
+                wait = _retry_after_s(exc)
+                self._paused_until = time.monotonic() + wait
+                log.warning("Groq's free limit is reached; using the local recognizer for the next %d s", wait)
+            else:
+                log.warning("Groq speech recognition failed (%s); using the local recognizer", exc)
             return self._fallback._transcribe(audio)
 
     def _groq(self, audio: np.ndarray) -> tuple[str, str]:
-        forced = self._settings.language if self._settings.language != "auto" else None
-        if forced is None and self._previous and len(audio) < _SHORT_S * 16000:
-            forced = self._previous  # too short to judge the language: keep the conversation's
+        # Whisper large-v3 judges the language itself, every time: forcing the conversation's
+        # language on a short reply turned an English "okay" into Greek letters once the
+        # conversation had been Greek, and the answers switched to Greek with it.
+        forced = self.language if self.language != "auto" else None
         text, language = self._request(audio, forced)
-        if language not in SUPPORTED_LANGUAGES:
-            # Whisper heard some other language; ask again in the conversation's language.
-            text, language = self._request(audio, self._previous or "el")
+        if forced:
+            language = forced  # the language switch is set: that's the language, full stop
+        else:
+            if language not in SUPPORTED_LANGUAGES:
+                # Whisper heard some other language; ask again in the conversation's language.
+                text, language = self._request(audio, self._previous or "el")
+            # The reply language follows the words actually written down (Greek or Latin
+            # letters, by majority), not just Whisper's label.
+            language = text_language(text, fallback=language)
         self._previous = language
         if text.lower().strip(" .!") in _HALLUCINATIONS:
             return "", language
@@ -240,10 +277,14 @@ class GroqSpeechToText(SpeechToText):
             file=("speech.wav", _wav_bytes(audio)),
             response_format="verbose_json",
             temperature=0.0,
+            # Names Whisper should expect (Ridebly, Flarmio...). Only names, no sentence, so the
+            # hint doesn't push it towards one language.
+            **({"prompt": self._settings.stt_hotwords} if self._settings.stt_hotwords else {}),
             **({"language": language} if language else {}),
         )
         data = result.model_dump()
-        detected = _LANGUAGE_CODES.get(str(data.get("language") or language).lower(), str(data.get("language")))
+        # When we told Whisper the language, that is the language; otherwise read its answer.
+        detected = language or _language_code(data.get("language")) or str(data.get("language"))
         # Whisper sometimes "hears" words in noise; drop segments it is unsure contain speech.
         segments = data.get("segments") or []
         if segments:
@@ -256,6 +297,14 @@ class GroqSpeechToText(SpeechToText):
             text = data.get("text") or ""
         log.debug("Groq heard (%s): %s", detected, text)
         return text.strip(), detected
+
+
+def _retry_after_s(error) -> float:
+    """How long Groq asks us to wait after a rate-limit refusal (60 s if it doesn't say)."""
+    try:
+        return max(1.0, min(float(error.response.headers.get("retry-after", 60)), 3600.0))
+    except (AttributeError, TypeError, ValueError):
+        return 60.0
 
 
 def _wav_bytes(audio: np.ndarray) -> bytes:

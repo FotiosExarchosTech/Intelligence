@@ -128,12 +128,20 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="don't open the face window (open the URL yourself)")
     parser.add_argument("--record", action="store_true", help="save what you say (and what was understood) to data/recordings")
     parser.add_argument("--login", action="store_true", help="open the Ridebly app to log in once (the assistant remembers it)")
+    parser.add_argument("--mic-test", action="store_true", help="record a few seconds and show what is heard and understood")
     parser.add_argument("--list-devices", action="store_true", help="list audio devices and exit")
     parser.add_argument("-v", "--verbose", action="store_true", help="show timings and state changes")
     args = parser.parse_args()
 
     if sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")  # Greek text on the Windows console
+
+    if args.mic_test:
+        logging.basicConfig(level=logging.WARNING)
+        from .mic_test import run as mic_test
+
+        mic_test()
+        return
 
     if args.login:
         asyncio.run(login())

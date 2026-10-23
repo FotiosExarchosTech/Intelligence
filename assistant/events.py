@@ -45,6 +45,20 @@ class AudioLevel:
 
 
 @dataclass(frozen=True)
+class LanguageRequested:
+    """Someone used the language switch (or asked by voice): "el", "en" or "auto"."""
+
+    language: str
+
+
+@dataclass(frozen=True)
+class LanguageChanged:
+    """The language the assistant now listens and speaks in: "el", "en" or "auto"."""
+
+    language: str
+
+
+@dataclass(frozen=True)
 class InterruptRequested:
     """Someone pressed the stop button: stop thinking and talking right away."""
 

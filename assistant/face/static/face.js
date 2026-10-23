@@ -224,6 +224,24 @@ addEventListener("keydown", (event) => {
   if (event.key === "Escape") interrupt();
 });
 
+// ---------- language switch ----------
+
+const languageButtons = [...document.querySelectorAll("#language button")];
+
+function showLanguage(language) {
+  for (const button of languageButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.language === language));
+  }
+}
+
+for (const button of languageButtons) {
+  button.addEventListener("click", () => {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "language", language: button.dataset.language }));
+    }
+  });
+}
+
 // The mouse pointer shows while the mouse moves and hides after a few quiet seconds.
 let cursorTimer = 0;
 addEventListener("pointermove", () => {
@@ -260,6 +278,9 @@ function connect() {
         break;
       case "say":
         showCaption(msg.text, msg.who);
+        break;
+      case "language":
+        showLanguage(msg.language);
         break;
     }
   });

@@ -19,6 +19,44 @@ body.hide-cursor {
   cursor: none;
 }
 
+/* Language switch (top right): the assistant only listens and speaks in the chosen language. */
+#language {
+  position: fixed;
+  top: 28px;
+  right: 32px;
+  display: flex;
+  padding: 4px;
+  gap: 4px;
+  border: 2px solid rgb(90 209 255 / 0.6);
+  border-radius: 999px;
+  background: #0b111c;
+
+  & button {
+    min-width: 3.2em;
+    padding: 0.45em 0.9em;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgb(90 209 255 / 0.75);
+    font: 600 clamp(16px, 2.2vmin, 24px) / 1 system-ui, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+
+    &:hover,
+    &:focus-visible {
+      color: rgb(90 209 255);
+      outline: none;
+    }
+
+    &[aria-pressed="true"] {
+      background: rgb(90 209 255);
+      color: #05070d;
+      box-shadow: 0 0 16px rgb(90 209 255 / 0.6);
+    }
+  }
+}
+
 /* Stop button: only there while the assistant is thinking or speaking. */
 #stop {
   --glow: rgb(90 209 255);

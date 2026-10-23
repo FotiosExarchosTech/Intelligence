@@ -15,9 +15,19 @@ import numpy as np
 from .audio_in import Microphone, SpeechDiscarded, SpeechStarted, Utterance
 from .audio_out import Speaker
 from .config import Settings
-from .events import AssistantSaid, AudioLevel, EventBus, InterruptRequested, State, StateChanged, UserSaid
-from .language import text_language
-from .llm import Tool, create_conversation
+from .events import (
+    AssistantSaid,
+    AudioLevel,
+    EventBus,
+    InterruptRequested,
+    LanguageChanged,
+    LanguageRequested,
+    State,
+    StateChanged,
+    UserSaid,
+)
+from .language import LANGUAGE_NAMES, text_language
+from .llm import Tool, ToolResult, create_conversation
 from .stt import create_speech_to_text
 from .tts import TextToSpeech
 
@@ -78,7 +88,10 @@ class Assistant:
             stt = pool.submit(create_speech_to_text, settings)
             tts = pool.submit(TextToSpeech, settings)
             self._stt, self._tts = stt.result(), tts.result()
-        self._llm = create_conversation(settings, tools)
+        # "el" / "en": listen and answer only in that language; "auto": per sentence.
+        self.language = settings.language
+        self._stt.language = settings.language
+        self._llm = create_conversation(settings, [*tools, self._language_tool()])
         self._speaker = Speaker(settings, on_level=lambda level: bus.publish(AudioLevel(level)))
 
     def _set_state(self, state: State) -> None:
@@ -97,18 +110,49 @@ class Assistant:
             self._speaker.stop()
             self._turn.cancel()
 
-    async def _listen_for_interrupts(self) -> None:
+    def set_language(self, language: str) -> None:
+        """The language switch: from now on listen and answer only in this language."""
+        if language not in ("el", "en", "auto") or language == self.language:
+            return
+        self.language = language
+        self._stt.language = language
+        log.info("Language switched to %s", language)
+        self._bus.publish(LanguageChanged(language))
+
+    def _language_tool(self) -> Tool:
+        async def set_language(args: dict) -> ToolResult:
+            language = args["language"]
+            self.set_language(language)
+            name = LANGUAGE_NAMES[language]
+            return ToolResult(f"The language switch is now set to {name}: from now on you hear and speak only {name}. "
+                              f"Continue in {name}.")
+
+        return Tool(
+            "set_language",
+            "Switch the conversation language when the person asks for it (\"can we speak English?\", "
+            "\"μίλα ελληνικά\"). After switching you only hear and speak that language until it is switched again.",
+            {"type": "object", "properties": {"language": {"type": "string", "enum": ["el", "en"]}},
+             "required": ["language"], "additionalProperties": False},
+            set_language,
+        )
+
+    async def _listen_for_requests(self) -> None:
+        """The stop button and the language switch."""
         events = self._bus.subscribe()
+        self._bus.publish(LanguageChanged(self.language))  # show the switch's starting position
         while True:
-            if isinstance(await events.get(), InterruptRequested):
-                self.interrupt()
+            match await events.get():
+                case InterruptRequested():
+                    self.interrupt()
+                case LanguageRequested(language=language):
+                    self.set_language(language)
 
     async def run(self) -> None:
         """Listen on the microphone forever."""
         self._mic.start()
         self._set_state(State.IDLE)
         log.info("Ready - start talking.")
-        interrupts = asyncio.create_task(self._listen_for_interrupts())
+        interrupts = asyncio.create_task(self._listen_for_requests())
         try:
             async for event in self._mic.events():
                 if self._busy:
@@ -133,10 +177,10 @@ class Assistant:
         """Type instead of talking (for testing the LLM + voice without the microphone)."""
         self._set_state(State.IDLE)
         log.info("Ready - type a message (empty line to quit).")
-        interrupts = asyncio.create_task(self._listen_for_interrupts())
+        interrupts = asyncio.create_task(self._listen_for_requests())
         try:
             while text := (await _read_line("> ")).strip():
-                language = text_language(text, fallback="en")
+                language = self.language if self.language != "auto" else text_language(text, fallback="en")
                 self._bus.publish(UserSaid(text, language))
                 self._turn = asyncio.create_task(self._respond(text, language))
                 await asyncio.wait([self._turn])  # doesn't raise when the turn is interrupted

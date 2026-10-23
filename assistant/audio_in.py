@@ -22,6 +22,8 @@ _PRE_ROLL_MS = 300  # audio kept from just before speech started, so first sylla
 _TAIL_KEEP_MS = 200  # silence kept after the last word
 _SILENCE_CHECK_FRAMES = 3000 // _FRAME_MS  # the first 3 s after starting
 _SILENT_PEAK = 0.004
+_CLIPPED = 0.99  # samples this loud are distorted
+_CLIPPED_SHARE = 0.002  # warn when more of an utterance than this is clipped
 
 
 @dataclass(frozen=True)
@@ -114,6 +116,7 @@ class Microphone:
         in_speech = False
         speech_frames = silence_frames = 0
         startup_frames, startup_peak = 0, 0.0
+        warned_clipping = False
 
         while True:
             frame = await self._next_frame()
@@ -162,7 +165,14 @@ class Microphone:
                     # Most of the trailing silence only told us the turn was over; recognizers
                     # are faster and a little more accurate without it.
                     trim = max(0, silence_frames - _TAIL_KEEP_MS // _FRAME_MS)
-                    yield Utterance(np.concatenate(speech[: len(speech) - trim]))
+                    audio = np.concatenate(speech[: len(speech) - trim])
+                    if not warned_clipping and np.mean(np.abs(audio) >= _CLIPPED) > _CLIPPED_SHARE:
+                        warned_clipping = True
+                        log.warning(
+                            "The microphone is too loud (the sound is clipping, which garbles speech): "
+                            "lower its level in Windows sound settings and turn off 'Microphone Boost'"
+                        )
+                    yield Utterance(audio)
                 else:
                     yield SpeechDiscarded()
                 speech = []

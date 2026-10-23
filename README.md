@@ -196,6 +196,11 @@ Ridebly and VisionArrays teams.
   the voice's loudness.
 - **Captions** under the face: what the person said (italic) while thinking, then each
   sentence the assistant speaks.
+- A **language switch** (ΕΛ | EN) in the top-right corner. While it is set, the assistant only
+  listens for and speaks that language: speech recognition is told the language, and replies use
+  it. People can also ask ("can we speak English?"), and the assistant flips the switch itself
+  (`set_language` tool). `LANGUAGE` in `.env` sets the starting position (`auto` = detect per
+  sentence until someone chooses).
 - A **stop button** appears while the assistant is thinking or speaking (Escape works too).
   The mouse pointer only shows while the mouse moves.
 - It reconnects to the server automatically (eyes close while disconnected). The server sends
@@ -228,6 +233,7 @@ The LLM gets these tools (`tools.py`):
 | `look_at_screen` | A screenshot of the page, e.g. to check a drawing. |
 | `go_back` | Previous page. |
 | `show_face` | Hides the page and shows the face again. |
+| `set_language` | Flips the language switch when the person asks for another language. |
 | `show_ridebly_pricing` | Sets the ridebly.com price calculator for the customer's fleet and highlights the price. |
 | `open_ridebly_app` | Opens the Ridebly app; tells the LLM when approval is needed. |
 | `wait_for_approval` | Waits until someone logs in to the app (that's the approval). |
@@ -374,7 +380,7 @@ All settings live in `.env`; `.env.example` lists every one with explanations. T
 | `LLM_MODEL`, `LLM_EFFORT` | claude-opus-5-5, low | Claude model and effort. |
 | `STT_ENGINE` | groq | `groq`, or local `canary`, `parakeet`, `whisper`. |
 | `STT_FALLBACK` | canary | Local recognizer when Groq can't be used. |
-| `LANGUAGE` | auto | `auto`, or force `el` / `en`. |
+| `LANGUAGE` | auto | Starting position of the language switch: `el`, `en`, or `auto` (detect per sentence). |
 | `AUDIO_INPUT_DEVICE`, `AUDIO_OUTPUT_DEVICE` | system default | Number or part of the device name. |
 | `VAD_MIN_SILENCE_MS` | 600 | Silence that ends a turn. |
 | `FACE_FULLSCREEN`, `FACE_CAPTIONS` | true, true | Kiosk window; subtitles. |

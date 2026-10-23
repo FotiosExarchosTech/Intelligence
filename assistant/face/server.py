@@ -13,7 +13,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Settings
-from ..events import AssistantSaid, AudioLevel, EventBus, Gaze, InterruptRequested, State, StateChanged, UserSaid
+from ..events import (
+    AssistantSaid,
+    AudioLevel,
+    EventBus,
+    Gaze,
+    InterruptRequested,
+    LanguageChanged,
+    LanguageRequested,
+    State,
+    StateChanged,
+    UserSaid,
+)
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +53,8 @@ def _message(event: object) -> dict | None:
             return {"type": "say", "who": "user", "text": text}
         case AssistantSaid(text=text):
             return {"type": "say", "who": "assistant", "text": text}
+        case LanguageChanged(language=language):
+            return {"type": "language", "language": language}
     return None
 
 
@@ -50,6 +63,7 @@ class FaceServer:
         self._bus = bus
         self._clients: set[WebSocket] = set()
         self._state = State.LOADING
+        self._language = settings.language
         self._captions = settings.face_captions
 
         app = FastAPI()
@@ -82,6 +96,7 @@ class FaceServer:
         await websocket.accept()
         await websocket.send_json({"type": "config", "captions": self._captions})
         await websocket.send_json({"type": "state", "state": self._state.value})
+        await websocket.send_json({"type": "language", "language": self._language})
         self._clients.add(websocket)
         try:
             while True:
@@ -91,6 +106,8 @@ class FaceServer:
                     continue
                 if message.get("type") == "interrupt":
                     self._bus.publish(InterruptRequested())
+                elif message.get("type") == "language" and message.get("language") in ("el", "en"):
+                    self._bus.publish(LanguageRequested(message["language"]))
         except WebSocketDisconnect:
             pass
         finally:
@@ -102,6 +119,8 @@ class FaceServer:
             event = await events.get()
             if isinstance(event, StateChanged):
                 self._state = event.state
+            elif isinstance(event, LanguageChanged):
+                self._language = event.language
             if (message := _message(event)) is None or not self._clients:
                 continue
             text = json.dumps(message, ensure_ascii=False)
